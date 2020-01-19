@@ -3,130 +3,128 @@
 // @namespace   waymarking.com
 // @description Displays a larger map in search results and waymark details
 // @include     http*://*.waymarking.com/*
-// @version     1.3
+// @version     1.4
 // @grant       none
 // ==/UserScript==
 
 window.biggerMap = {
-	version: "1.3",
-	
+	version: "1.4",
+
 	VIEW_MODE_SMALL: 0,
 	VIEW_MODE_RELATIVE: 1,
 	VIEW_MODE_FIXED: 2,
-	
+
 	COLOR_MODE_NONE: 0,
 	COLOR_MODE_LARGE: 1,
 	COLOR_MODE_ALL: 2,
-	
+
 	waymarks: [],
 	settings: {},
-	
-	init: function() {
+
+    hooks: async function() {
+        while(!window.mapItems) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        window.biggerMap.mapItems = window.mapItems;
+        window.mapItems = function() {};
+        window.createMarker = window.biggerMap.createMarker;
+
+        window.biggerMap.hooks = true;
+    },
+
+	init: async function() {
+        while(!window.biggerMap.hooks || !window.map || !window.mapItems || !window.L || !window.bounds) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+
 		window.biggerMap.addCss();
 		window.biggerMap.addLinks();
-		
-		window.biggerMap.login = jQuery("#ctl00_HeaderControl1_lnkLoginName").html();
-		
+
+		window.biggerMap.login = document.getElementById("ctl00_HeaderControl1_lnkLoginName").innerHTML;
+
 		window.biggerMap.mapItems();
-		window.setTimeout(function () {
-			map.fitBounds(bounds, {maxZoom: 15});
-		}, 1000);
+        window.map.fitBounds(window.bounds, {maxZoom: 15});
 
 		window.biggerMap.loadSettings();
 		window.biggerMap.loadMapSize();
 		window.biggerMap.changeMapMode();
 	},
-	
+
 	addCss: function() {
-		var head = jQuery("head");
-		head.append("<link rel='stylesheet' href='https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css' />");
-		head.append("<style>" + window.biggerMap.CSS + "</style>");
+		var head = document.querySelector("head");
+        var link = document.createElement("link");
+        link.setAttribute("rel", "stylesheet");
+        link.setAttribute("href", "https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css");
+		head.appendChild(link);
+        var style = document.createElement("style");
+        style.innerHTML = window.biggerMap.CSS;
+		head.appendChild(style);
 	},
-	
+
 	addLinks: function() {
-		var header = jQuery("#ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap .box");
-		header.css("position", "relative");
-		var links = jQuery("<h3 class='biggermap_links' />");
-		
-		var enlarge = jQuery("<a href='#'>Enlarge</a>");
-		links.append(enlarge);
-		links.append("&nbsp;&nbsp;")
+		var links = document.createElement("h3");
+        links.setAttribute ("class", "biggermap_links");
+        links.innerHTML = " \
+<a href='#' onclick='window.biggerMap.viewMode = window.biggerMap.VIEW_MODE_RELATIVE; window.biggerMap.changeMapMode(); return false;'>Enlarge</a>&nbsp;&nbsp; \
+<a href='#' onclick='window.biggerMap.openSettings(); return false;'>Settings</a>&nbsp;<i class='biggermap_links_toggle fa fa-caret-down'/>";
 
-		var settings = jQuery("<a href='#'>Settings</a>");
-		links.append(settings);
-		links.append("&nbsp;");
-		var settingsToggle = jQuery("<i class='fa fa-caret-down'/>");
-		links.append(settingsToggle);
-		
-		enlarge.click(function() {
-			window.biggerMap.viewMode = window.biggerMap.VIEW_MODE_RELATIVE;
-			window.biggerMap.changeMapMode();
-			return false;
-		});
-
-		settings.click(function() {
-			window.biggerMap.openSettings(settings, settingsToggle);
-			return false;
-		});
-
-		header.prepend(links);
+		var header = document.querySelector("#ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap .box");
+		header.style.position = "relative";
+		header.insertBefore(links, header.childNodes[0]);
 	},
-	
+
 	changeMapMode: function() {
-		if (!map) {
-			return;
-		}
-		
 		window.biggerMap.viewMode = window.biggerMap.viewMode || window.biggerMap.VIEW_MODE_SMALL;
-		var mapContainer = jQuery("#map_canvas");
-		
-		mapContainer.removeClass("biggermap_view_small");
-		mapContainer.removeClass("biggermap_view_relative");
-		mapContainer.removeClass("biggermap_view_fixed");
-		
+		var mapContainer = document.getElementById("map_canvas");
+
+		mapContainer.classList.remove("biggermap_view_small");
+		mapContainer.classList.remove("biggermap_view_relative");
+		mapContainer.classList.remove("biggermap_view_fixed");
+
 		if (window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_SMALL) {
-			mapContainer.addClass("biggermap_view_small");
+			mapContainer.classList.add("biggermap_view_small");
 			window.biggerMap.showAdditionalMapButtons(false);
 			window.biggerMap.showResizer(false);
 			window.biggerMap.showColors(window.biggerMap.settings.colorMode == window.biggerMap.COLOR_MODE_ALL);
-			mapContainer.css("height", "");
-			mapContainer.insertBefore("#mapinfo");
+			mapContainer.style.height = "";
+			document.getElementById("mapinfo").parentNode.insertBefore(mapContainer, document.getElementById("mapinfo"));
 			window.biggerMap.showFixed(false);
 			window.biggerMap.enablePopup(false);
 			window.biggerMap.showSmallMapContainer(true);
-			
+
 		} else if (window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_RELATIVE || window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_FIXED) {
 			window.biggerMap.showSmallMapContainer(false);
 			window.biggerMap.showAdditionalMapButtons(true);
 			window.biggerMap.enablePopup(true);
 			window.biggerMap.showColors(window.biggerMap.settings.colorMode != window.biggerMap.COLOR_MODE_NONE);
-			
+
 			if (window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_RELATIVE) {
-				mapContainer.addClass("biggermap_view_relative");
-				mapContainer.appendTo("#header");
+				mapContainer.classList.add("biggermap_view_relative");
+                document.getElementById("header").appendChild(mapContainer);
 				window.biggerMap.showFixed(false);
 				window.biggerMap.showResizer(true);
 			} else {
-				mapContainer.addClass("biggermap_view_fixed");
-				jQuery("#biggerMapBtnFixed").css("background-color", "#DDDDDD");
+				mapContainer.classList.add("biggermap_view_fixed");
+				document.getElementById("biggerMapBtnFixed").style.backgroundColor = "#DDDDDD";
 				var fixed = window.biggerMap.showFixed(true);
-				mapContainer.appendTo(fixed);
+                fixed.appendChild(mapContainer);
 				window.biggerMap.showResizer(true);
-				jQuery("#biggerMapResizer").appendTo(fixed);
+                fixed.appendChild(document.getElementById("biggerMapResizer"));
 			}
-			
+
 			if (window.biggerMap.height > 0) {
-				mapContainer.css("height", "" + window.biggerMap.height + "px");
+				mapContainer.style.height = "" + window.biggerMap.height + "px";
 			}
 		}
-		
+
 		window.biggerMap.onResize();
 	},
-	
+
 	searchFromHere: function() {
-		if (map && searchUrl) {
-			var latLng = map.getCenter();
-			var newSearchUrl = new URI(searchUrl);
+		if (window.map && window.searchUrl) {
+			var latLng = window.map.getCenter();
+			var newSearchUrl = new URI(window.searchUrl);
 			newSearchUrl
 				.removeSearch('sg')
 				.setSearch('lat', latLng.lat)
@@ -135,113 +133,132 @@ window.biggerMap = {
 		}
 		return false;
 	},
-	
+
 	showSmallMapContainer: function(show) {
 		if (show) {
-			jQuery("#ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap").show();
+			document.getElementById("ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap").style.display = "";
 		} else {
-			jQuery("#ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap").hide();
+			document.getElementById("ctl00_ContentRightColumn_CategoryFilterControl1_uxGoogleMap").style.display = "none";
 		}
 	},
-	
+
 	showAdditionalMapButtons: function(show) {
-		var mapContainer = jQuery("#map_canvas");
-		jQuery(".leaflet-top.leaflet-right", mapContainer).children().remove();
-		jQuery(".leaflet-bottom.leaflet-left", mapContainer).children().remove();
+		var topRight = document.querySelector("#map_canvas .leaflet-top.leaflet-right");
+		var bottomLeft = document.querySelector("#map_canvas .leaflet-bottom.leaflet-left");
+        topRight.innerHTML = "";
+        bottomLeft.innerHTML = "";
+
 		if (show) {
-			var topRight = jQuery(".leaflet-top.leaflet-right", mapContainer);
-			var bottomLeft = jQuery(".leaflet-bottom.leaflet-left", mapContainer);
-			jQuery("<div class='leaflet-control-zoom leaflet-bar leaflet-control' />").appendTo(topRight);
-			jQuery("<div class='leaflet-control-zoom leaflet-bar leaflet-control' />").appendTo(bottomLeft);
-			jQuery("<a title='Close map' href='#' id='biggerMapClose'><i class='fa fa-close fa-lg' style='line-height: 26px; color: #444444;' /></a><a title='Pin map to window' href='#' id='biggerMapBtnFixed'><i class='fa fa-map-pin fa-lg' style='line-height: 26px; color: #444444;' /></a>").appendTo(topRight.children().first());
-			jQuery("<a href='#' id='biggerMapSearchFromHere' style='width: auto; padding: 0 5px;'><i class='fa fa-search fa-lg' style='color: #444444; margin-right: 4px;' />Search from Here</a>").appendTo(bottomLeft.children().first());
-			jQuery("#biggerMapClose").click(function() {
+            topRight.innerHTML = " \
+<div class='leaflet-control-zoom leaflet-bar leaflet-control'> \
+    <a title='Close map' href='#' id='biggerMapClose'><i class='fa fa-close fa-lg' style='line-height: 26px; color: #444444;'></i></a> \
+    <a title='Pin map to window' href='#' id='biggerMapBtnFixed'><i class='fa fa-map-pin fa-lg' style='line-height: 26px; color: #444444;'></i></a> \
+</div>";
+            bottomLeft.innerHTML = " \
+<div class='leaflet-control-zoom leaflet-bar leaflet-control'> \
+    <a href='#' id='biggerMapSearchFromHere' style='width: auto; padding: 0 5px;'><i class='fa fa-search fa-lg' style='color: #444444; margin-right: 4px;'></i>Search from Here</a> \
+</div>";
+
+			document.getElementById("biggerMapClose").addEventListener("click", function() {
 				window.biggerMap.viewMode = window.biggerMap.VIEW_MODE_SMALL;
 				window.biggerMap.changeMapMode();
 				return false;
 			});
-			jQuery("#biggerMapBtnFixed").click(function() {
+			document.getElementById("biggerMapBtnFixed").addEventListener("click", function() {
 				window.biggerMap.viewMode = window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_FIXED ? window.biggerMap.VIEW_MODE_RELATIVE : window.biggerMap.VIEW_MODE_FIXED;
 				window.biggerMap.changeMapMode();
 				return false;
 			});
-			jQuery("#biggerMapSearchFromHere").click(window.biggerMap.searchFromHere);
+			document.getElementById("biggerMapSearchFromHere").addEventListener("click", window.biggerMap.searchFromHere);
 		}
 	},
-	
+
 	showFixed: function(show) {
-		jQuery("#biggerMapFixed").remove();
-		jQuery("#biggerMapSpacer").remove();
+		if (document.getElementById("biggerMapFixed")) {
+            document.getElementById("biggerMapFixed").parentNode.removeChild(document.getElementById("biggerMapFixed"));
+        }
+		if (document.getElementById("biggerMapSpacer")) {
+            document.getElementById("biggerMapSpacer").parentNode.removeChild(document.getElementById("biggerMapSpacer"));
+        }
+
 		if (show) {
+            var body = document.querySelector("body");
 			var height = window.biggerMap.height > 0 ? window.biggerMap.height : 235;
-			var spacer = jQuery("<div id='biggerMapSpacer' style='height: " + height + "px;' />");
-			jQuery("body").prepend(spacer);
-			var fixed = jQuery("<div id='biggerMapFixed' />");
-			jQuery("body").prepend(fixed);
+			var spacer = document.createElement("div");
+            spacer.setAttribute("id", "biggerMapSpacer");
+            spacer.setAttribute("style", "height: " + height + "px;");
+            body.insertBefore(spacer, body.childNodes[0]);
+			var fixed = document.createElement("div");
+            fixed.setAttribute("id", "biggerMapFixed");
+            body.insertBefore(fixed, body.childNodes[0]);
 			return fixed;
 		}
 	},
 
 	showResizer: function(show) {
-		jQuery("#biggerMapResizer").remove();
+        var resizer = document.getElementById("biggerMapResizer");
+        if (resizer) {
+            resizer.parentNode.removeChild(resizer);
+        }
+
 		if (show) {
-			var resizer = jQuery("<div id='biggerMapResizer' />");
-			resizer.mousedown(window.biggerMap.resizeStart);
-			jQuery("body").mousemove(window.biggerMap.resizeMove);
-			resizer.mouseup(window.biggerMap.resizeEnd);
-			resizer.appendTo("#header");
+			resizer = document.createElement("div");
+            resizer.setAttribute("id", "biggerMapResizer");
+            document.getElementById("header").appendChild(resizer);
+
+			resizer.addEventListener("mousedown", window.biggerMap.resizeStart);
+			document.querySelector("body").addEventListener("mousemove", window.biggerMap.resizeMove);
+			resizer.addEventListener("mouseup", window.biggerMap.resizeEnd);
 		}
 	},
-	
+
 	showColors: function(show) {
-		var mapContainer = jQuery("#map_canvas");
+		var mapContainer = document.getElementById("map_canvas");
 		if (show) {
-			mapContainer.addClass("biggermap_color");
+			mapContainer.classList.add("biggermap_color");
 		} else {
-			mapContainer.removeClass("biggermap_color");
+			mapContainer.classList.remove("biggermap_color");
 		}
 	},
 
 	createMarker: function(item) {
 		var waymark = window.biggerMap.insertWaymark(item);
-		var marker = L.marker([waymark.lat, waymark.lng], {
+		var marker = window.L.marker([waymark.lat, waymark.lng], {
 			title: waymark.title,
-			icon: L.icon({
+			icon: window.L.icon({
 				iconUrl: 'http://www.waymarking.com/dyn_img/bubble.aspx?path=' + waymark.icon,
 				iconSize: [37, 33],
 				iconAnchor: [37, 33],
 				popupAnchor: [-19, -33],
 				className: waymark.unpublished ? "biggermap_marker_unpublished" : waymark.owner ? "biggermap_marker_owner" : waymark.visited ? "biggermap_marker_visited" : ""
 			})
-		}).addTo(map);
+		}).addTo(window.map);
 		marker.on("click", function () {
 			window.biggerMap.onMarkerClick(waymark);
 		});
 		waymark.marker = marker;
-		bounds.extend(L.latLng([waymark.lat, waymark.lng]));
+		window.bounds.extend(window.L.latLng([waymark.lat, waymark.lng]));
 	},
-	
+
 	onMarkerClick: function(waymark) {
 		window.showInfoPanel(waymark.icon, waymark.title, waymark.code, waymark.cat, waymark.desc);
 	},
-	
+
 	insertWaymark: function(item) {
-		var tr = jQuery("input[name='wmchk" + item.code + "'").closest("tr");
-		if (tr.length > 0) {
-			item.owner = window.biggerMap.login && jQuery(".wmd_submitter a", tr).html() == window.biggerMap.login;
-			item.visited = jQuery(".wmd_visited", tr).length > 0;
-			item.unpublished = jQuery(".wmd_namebold", tr).length == 0;
+        var checkbox = document.querySelector("input[name='wmchk" + item.code + "'");
+        if (checkbox) {
+            var tr = checkbox.parentNode.parentNode.parentNode;
+			item.owner = window.biggerMap.login && tr.querySelector(".wmd_submitter a").innerHTML == window.biggerMap.login;
+			item.visited = tr.querySelector(".wmd_visited");
+			item.unpublished = !tr.querySelector(".wmd_namebold");
 		}
 		window.biggerMap.waymarks.push(item);
 		return item;
 	},
 
 	enablePopup: function(enable) {
-		if (!map) {
-			return;
-		}
 		if (!enable) {
-			map.closePopup();
+			window.map.closePopup();
 		}
 
 		for (var i = 0; i < window.biggerMap.waymarks.length; i++) {
@@ -255,14 +272,14 @@ window.biggerMap = {
 			}
 		}
 	},
-	
+
 	createPopup: function(waymark) {
 		return "<div class='biggermap_popup'><table class='googlemap_wmtable'><tr><td class='googlemap_wmtd'><a href='/cat/details.aspx?f=1&guid=" + waymark.cat + "'><img src='/images/cat_icons/" + waymark.icon + ".gif' width='24' border='0' valign='absmiddle'></a></td><td class='googlemap_wmtd'><a href='/waymarks/" + waymark.code + "'>" + waymark.title + "</a></td></tr><tr><td class='googlemap_wmtd2'></td><td class='googlemap_wmtd2'>" + waymark.desc + "</td></tr></table></div>";
 	},
-	
+
 	resizeStart: function(e) {
 		window.biggerMap.resizing = {
-			initialMapHeight: jQuery("#map_canvas").height(),
+			initialMapHeight: document.getElementById("map_canvas").clientHeight,
 			initialY: e.pageY
 		};
 		return false;
@@ -273,9 +290,9 @@ window.biggerMap = {
 			return true;
 		}
 		var newHeight = window.biggerMap.resizing.initialMapHeight - window.biggerMap.resizing.initialY + e.pageY;
-		jQuery("#map_canvas").css("height", newHeight + "px");
+		document.getElementById("map_canvas").style.height = newHeight + "px";
 		if (window.biggerMap.viewMode == window.biggerMap.VIEW_MODE_FIXED) {
-			jQuery("#biggerMapSpacer").css("height", newHeight + "px");
+			document.getElementById("biggerMapSpacer").style.height = newHeight + "px";
 		}
 		window.biggerMap.height = newHeight;
 		window.biggerMap.onResize();
@@ -286,92 +303,94 @@ window.biggerMap = {
 		window.biggerMap.resizing = null;
 		return false;
 	},
-	
+
 	onResize: function() {
-		if (!map) {
-			return;
-		}
-		map.invalidateSize();
+		window.map.invalidateSize();
 		window.biggerMap.saveMapSize();
 	},
-	
-	openSettings: function(link, toggle) {
-		toggle.toggleClass("fa-caret-up");
-		toggle.toggleClass("fa-caret-down");
-			
+
+	openSettings: function(link) {
+        var toggle = document.querySelector(".biggermap_links_toggle");
+		toggle.classList.toggle("fa-caret-up");
+		toggle.classList.toggle("fa-caret-down");
+
 		if (window.biggerMap.settingsOpen) {
-			jQuery("#biggerMapSettings").remove();
+            var settings = document.querySelector(".biggermap_settings");
+            settings.parentNode.removeChild(settings);
 			window.biggerMap.settingsOpen = false;
 			return;
 		}
 		window.biggerMap.settingsOpen = true;
-			
-		var div = jQuery("<div id='biggerMapSettings' />");
-		
-		div.append(jQuery("<label>Save map size:</label>"));
-		var size = jQuery("<select />");
-		size.append("<option value='false'>only for current session</option>");
-		size.append("<option value='true'>permanent</option>");
-		size.val(window.biggerMap.settings.saveSizePermanent ? "true" : "false");
-		div.append(size);
 
-		div.append(jQuery("<label>Show colored markers:</label>"));
-		var color = jQuery("<select />");
-		color.append("<option value='" + window.biggerMap.COLOR_MODE_NONE + "'>never</option>");
-		color.append("<option value='" + window.biggerMap.COLOR_MODE_LARGE + "'>only on large map</option>");
-		color.append("<option value='" + window.biggerMap.COLOR_MODE_ALL + "'>on small and large map</option>");
-		color.val(window.biggerMap.settings.colorMode);
-		div.append(color);
-		
-		var legendToggle = jQuery("<div class='biggermap_settings_toggle'><a href='#'>Color legend</a>&nbsp;<i class='fa fa-caret-down'/></div>");
-		div.append(legendToggle);
-		var legend = jQuery("<table style='display: none;'><tr><td><i style='color: purple;'>purple:</i></td><td>created by you</td></tr><tr><td><i style='color: green;'>green:</i></td><td>visited by you</td></tr><tr><td><i style='color: grey;'>grey:</i></td><td>unpublished (pending review / declined)</td></tr></table>");
-		div.append(legend);
-		
-		var infoToggle = jQuery("<div class='biggermap_settings_toggle'><a href='#'>Info</a>&nbsp;<i class='fa fa-caret-down'/></div>");
-		div.append(infoToggle);
-		var info = jQuery("<div style='display: none;'><i>BiggerMap User Script (aka. Greasemonkey script)</i><br/>Version: " + window.biggerMap.version + "<br/>Created by <a href='http://www.waymarking.com/users/profile.aspx?f=1&guid=9394e8bb-cb86-4d60-8867-1c74955fe4e2' target='_blank'>Narayan,</a>&nbsp;<a href='http://www.waymarking.com/users/email.aspx?f=1&guid=9394e8bb-cb86-4d60-8867-1c74955fe4e2' target='_blank'><i class='fa fa-envelope'/></a></div>");
-		div.append(info);
-		
-		link.parent().append(div);
-		
-		size.change(function() {
-			window.biggerMap.settings.saveSizePermanent = (size.val() == "true");
+		var div = document.createElement("div");
+        div.setAttribute("class", "biggermap_settings");
+
+        div.innerHTML = " \
+<label>Save map size:</label> \
+<select class='biggermap_settings_size'> \
+    <option value='false'>only for current session</option> \
+    <option value='true'>permanent</option> \
+</select> \
+<label>Show colored markers:</label> \
+<select class='biggermap_settings_color'> \
+    <option value='" + window.biggerMap.COLOR_MODE_NONE + "'>never</option> \
+    <option value='" + window.biggerMap.COLOR_MODE_LARGE + "'>only on large map</option> \
+    <option value='" + window.biggerMap.COLOR_MODE_ALL + "'>on small and large map</option> \
+</select> \
+<div class='biggermap_settings_toggle biggermap_settings_legend_link'><a href='#'>Color legend</a>&nbsp;<i class='fa fa-caret-down'></i></div> \
+<table class='biggermap_settings_legend closed'> \
+    <tr><td><i style='color: purple;'>purple:</i></td><td>created by you</td></tr> \
+    <tr><td><i style='color: green;'>green:</i></td><td>visited by you</td></tr> \
+    <tr><td><i style='color: grey;'>grey:</i></td><td>unpublished (pending review / declined)</td></tr> \
+</table> \
+<div class='biggermap_settings_toggle biggermap_settings_info_link'><a href='#'>Info</a>&nbsp;<i class='fa fa-caret-down'></i></div> \
+<div class='biggermap_settings_info closed'> \
+    <i>BiggerMap User Script (aka. Greasemonkey script)</i><br/> \
+    Version: " + window.biggerMap.version + "<br/> \
+    Created by <a href='http://www.waymarking.com/users/profile.aspx?f=1&guid=9394e8bb-cb86-4d60-8867-1c74955fe4e2' target='_blank'>Narayan,</a>&nbsp; \
+    <a href='http://www.waymarking.com/users/email.aspx?f=1&guid=9394e8bb-cb86-4d60-8867-1c74955fe4e2' target='_blank'><i class='fa fa-envelope'></i></a> \
+</div>";
+
+        document.querySelector(".biggermap_links").appendChild(div);
+
+        document.querySelector(".biggermap_settings_size").value = window.biggerMap.settings.saveSizePermanent ? "true" : "false";
+        document.querySelector(".biggermap_settings_color").value = window.biggerMap.settings.colorMode;
+
+        document.querySelector(".biggermap_settings_size").addEventListener("change", function(e) {
+            window.biggerMap.settings.saveSizePermanent = (e.target.value == "true");
 			window.biggerMap.saveSettings();
 			window.biggerMap.saveMapSize();
-		});
-		
-		color.change(function() {
-			window.biggerMap.settings.colorMode = color.val();
+        });
+
+        document.querySelector(".biggermap_settings_color").addEventListener("change", function(e) {
+			window.biggerMap.settings.colorMode = e.target.value;
 			window.biggerMap.saveSettings();
 			window.biggerMap.changeMapMode();
-		});
-		
-		legendToggle.click(function() {
-			jQuery(".fa", legendToggle).toggleClass("fa-caret-up");
-			jQuery(".fa", legendToggle).toggleClass("fa-caret-down");
-			legend.toggle();
-			return false;
-		});
+        });
 
-		infoToggle.click(function() {
-			jQuery(".fa", infoToggle).toggleClass("fa-caret-up");
-			jQuery(".fa", infoToggle).toggleClass("fa-caret-down");
-			info.toggle();
-			return false;
-		});
+        document.querySelector(".biggermap_settings_legend_link a").addEventListener("click", function() {
+			document.querySelector(".biggermap_settings_legend_link .fa").classList.toggle("fa-caret-up");
+			document.querySelector(".biggermap_settings_legend_link .fa").classList.toggle("fa-caret-down");
+			document.querySelector(".biggermap_settings_legend").classList.toggle("closed");
+        });
+
+        document.querySelector(".biggermap_settings_info_link a").addEventListener("click", function() {
+			document.querySelector(".biggermap_settings_info_link .fa").classList.toggle("fa-caret-up");
+			document.querySelector(".biggermap_settings_info_link .fa").classList.toggle("fa-caret-down");
+			document.querySelector(".biggermap_settings_info").classList.toggle("closed");
+        });
 	},
-	
+
 	loadSettings: function() {
 		window.biggerMap.settings.saveSizePermanent = window.biggerMap.getCookie("waymarking.biggermap.savesizepermenent") == "true";
 		window.biggerMap.settings.colorMode = window.biggerMap.getCookie("waymarking.biggermap.color") || window.biggerMap.COLOR_MODE_LARGE;
 	},
-	
+
 	saveSettings: function() {
 		window.biggerMap.setCookie("waymarking.biggermap.savesizepermenent", "" + window.biggerMap.settings.saveSizePermanent, true);
 		window.biggerMap.setCookie("waymarking.biggermap.color", "" + window.biggerMap.settings.colorMode, true);
 	},
-	
+
 	loadMapSize: function() {
 		window.biggerMap.viewMode = window.biggerMap.getCookie("waymarking.biggermap.view") || window.biggerMap.VIEW_MODE_SMALL;
 		window.biggerMap.height = 0;
@@ -385,7 +404,7 @@ window.biggerMap = {
 			window.biggerMap.setCookie("waymarking.biggermap.height", window.biggerMap.height, window.biggerMap.settings.saveSizePermanent);
 		}
 	},
-	
+
 	getCookie: function(cname) {
 		var name = cname + "=";
 		var ca = document.cookie.split(';');
@@ -400,11 +419,11 @@ window.biggerMap = {
 		}
 		return "";
 	},
-	
+
 	setCookie: function(cname, value, permanent) {
 		document.cookie = cname + "=" + value + "; path=/" + (permanent ? "; expires=Fri, 31 Dec 9999 23:59:59 GMT" : "");
 	},
-	
+
 	CSS: "\
 		/* *** links *** */\
 		h3.biggermap_links {\
@@ -467,7 +486,7 @@ window.biggerMap = {
 		}\
 		\
 		/* *** settings *** */\
-		#biggerMapSettings {\
+		.biggermap_settings {\
 			position: absolute;\
 			right: 0;\
 			margin-top: 5px;\
@@ -478,35 +497,29 @@ window.biggerMap = {
 			color: black;\
 			z-index: 1001;\
 		}\
-		#biggerMapSettings select, #biggerMapSettings .biggermap_settings_toggle, #biggerMapSettings table {\
+		.biggermap_settings select, .biggermap_settings .biggermap_settings_toggle, .biggermap_settings table {\
 			margin-bottom: 3px;\
 		}\
-		#biggerMapSettings select {\
+		.biggermap_settings select {\
 			font-size: 10px;\
 			font-family: Verdana,sans-serif;\
 		}\
-		#biggerMapSettings .biggermap_settings_toggle a {\
+		.biggermap_settings .biggermap_settings_toggle a {\
 			color: black;\
 		}\
-		#biggerMapSettings td {\
+		.biggermap_settings td {\
 			padding: 0;\
 			vertical-align: top;\
 		}\
-	"
+        .biggermap_settings .closed {\
+			display: none; \
+		}\
+    "
 };
 
-var func = function() {
-	window.biggerMap.mapItems = window.mapItems;
-	window.mapItems = function() {};
-	window.createMarker = window.biggerMap.createMarker;
-	jQuery(document).ready(function() {
-        window.setTimeout(function() {
-            window.biggerMap.init();
-        }, 1000);
-	});
-};
-
-var script = document.createElement('script');
-script.type = "text/javascript";
-script.textContent = '(' + func.toString() + ')();';
-document.body.appendChild(script);
+(function () {
+	window.addEventListener("load", function() {
+        window.biggerMap.hooks();
+        window.biggerMap.init();
+    }, false);
+})();
